@@ -21,6 +21,8 @@ import {
   Box,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
+import CheckIcon from "@mui/icons-material/Check";
+import CloseIcon from "@mui/icons-material/Close";
 import dayjs from "dayjs";
 import {
   fetchEntriesForPeriod,
@@ -30,6 +32,7 @@ import {
 } from "../store/milkSlice";
 import { getMonthPeriod } from "../utils/dateUtils";
 import type { AppDispatch } from "../store/store";
+import { fetchSettings } from "../store/settingsSlice";
 
 interface Props {
   onEdit?: (entry: MilkEntry) => void;
@@ -38,6 +41,9 @@ interface Props {
 const DailyEntriesTable: React.FC<Props> = ({ onEdit }) => {
   const { entries, loading, distinctPeriods } = useSelector(
     (state: RootState) => state.milk
+  );
+  const paymentStatus = useSelector(
+    (state: RootState) => state.settings.settings.paymentStatus
   );
   const dispatch = useDispatch<AppDispatch>();
 
@@ -60,6 +66,7 @@ const DailyEntriesTable: React.FC<Props> = ({ onEdit }) => {
   useEffect(() => {
     // fetch distinct periods for the dropdown
     dispatch(fetchDistinctPeriods());
+    dispatch(fetchSettings());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -78,6 +85,10 @@ const DailyEntriesTable: React.FC<Props> = ({ onEdit }) => {
     );
   }, [entries]);
 
+  useEffect(() => {
+    console.log("Payment status:", paymentStatus);
+  }, [paymentStatus]);
+
   // When user changes periodFilter, dispatch server-side fetch
   useEffect(() => {
     const run = async () => {
@@ -85,6 +96,8 @@ const DailyEntriesTable: React.FC<Props> = ({ onEdit }) => {
       dispatch(clearEntries());
       setLastDate(null);
       setHasMore(true);
+
+      // console.log("Fetching entries for period filter:", periodFilter);
 
       if (periodFilter === "All") {
         const res = await dispatch(fetchEntriesPage({ pageSize: 20 }));
@@ -201,7 +214,11 @@ const DailyEntriesTable: React.FC<Props> = ({ onEdit }) => {
                       {dayjs(entry.date).format("DD-MM-YYYY")}
                     </TableCell>
                     <TableCell align="center">
-                      {entry.milkTaken ? "Yes" : "No"}
+                      {entry.milkTaken ? (
+                        <CheckIcon color="success" />
+                      ) : (
+                        <CloseIcon color="error" />
+                      )}
                     </TableCell>
                     <TableCell align="center">{entry.quantity}</TableCell>
                     <TableCell align="center">
@@ -209,7 +226,11 @@ const DailyEntriesTable: React.FC<Props> = ({ onEdit }) => {
                         size="small"
                         onClick={() => onEdit && onEdit(entry)}
                       >
-                        <EditIcon fontSize="small" />
+                        {paymentStatus[periodFilter] === "Paid" ? (
+                          ""
+                        ) : (
+                          <EditIcon fontSize="small" />
+                        )}
                       </IconButton>
                     </TableCell>
                   </TableRow>
