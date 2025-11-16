@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import HomePage from "./pages/HomePage";
@@ -8,9 +8,15 @@ import LoginPage from "./pages/LoginPage";
 import PrivateRoute from "./components/PrivateRoute";
 import { useAuthState } from "react-firebase-hooks/auth";
 import { auth } from "./firebase/config";
+import { StatusBar, Style } from "@capacitor/status-bar";
 
 const App: React.FC = () => {
   const [user] = useAuthState(auth);
+
+  useEffect(() => {
+    StatusBar.setStyle({ style: Style.Dark });
+  }, []);
+
   return (
     <div className="mx-auto pt-10">
       {user && <Navbar />}
