@@ -25,6 +25,7 @@ import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs, { Dayjs } from "dayjs";
 // ensure dayjs uses en-gb locale so DatePicker shows day-first format (DD/MM/YYYY)
 import "dayjs/locale/en-gb";
+import { getMonthPeriod } from "../utils/dateUtils";
 dayjs.locale("en-gb");
 
 const USER_ID = "defaultUser";
@@ -36,12 +37,15 @@ interface Props {
 
 const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
   const dispatch = useDispatch<AppDispatch>();
+  const paymentStatus = useSelector(
+    (state: RootState) => state.settings.settings.paymentStatus
+  );
   // We intentionally do not use the global `loading` flag to render the Save button
   // to avoid the visual flash when other parts of the page fetch data.
   // Keep selecting the state in case future logic needs it.
   useSelector((state: RootState) => state.milk);
   const [saving, setSaving] = useState(false);
-
+  const [disabled, setDisabled] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [milkTaken, setMilkTaken] = useState(true);
   const [quantity, setQuantity] = useState<number>(1);
@@ -76,6 +80,13 @@ const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
         setQuantity(1);
       }
     };
+
+    const period = getMonthPeriod(new Date(date));
+    if (paymentStatus[period] === "Paid") {
+      setDisabled(true);
+    } else {
+      setDisabled(false);
+    }
 
     // Only auto-fetch when there's no explicit initialEntry controlling the form
     if (!initialEntry) fetchEntryForDate();
@@ -184,7 +195,7 @@ const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
             color="primary"
             fullWidth
             size="large"
-            disabled={saving}
+            disabled={saving || disabled}
             startIcon={saving ? <CircularProgress size={20} /> : null}
           >
             {saving ? "Saving..." : "Save Entry"}

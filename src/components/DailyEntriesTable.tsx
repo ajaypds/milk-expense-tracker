@@ -222,16 +222,16 @@ const DailyEntriesTable: React.FC<Props> = ({ onEdit }) => {
                     </TableCell>
                     <TableCell align="center">{entry.quantity}</TableCell>
                     <TableCell align="center">
-                      <IconButton
-                        size="small"
-                        onClick={() => onEdit && onEdit(entry)}
-                      >
-                        {paymentStatus[periodFilter] === "Paid" ? (
-                          ""
-                        ) : (
+                      {paymentStatus[periodFilter] === "Paid" ? (
+                        ""
+                      ) : (
+                        <IconButton
+                          size="small"
+                          onClick={() => onEdit && onEdit(entry)}
+                        >
                           <EditIcon fontSize="small" />
-                        )}
-                      </IconButton>
+                        </IconButton>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

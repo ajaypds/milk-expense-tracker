@@ -14,11 +14,13 @@ const App: React.FC = () => {
   const [user] = useAuthState(auth);
 
   useEffect(() => {
-    StatusBar.setStyle({ style: Style.Dark });
+    StatusBar.setStyle({ style: Style.Light });
+    StatusBar.setBackgroundColor({ color: "#ffffff" });
+    StatusBar.setOverlaysWebView({ overlay: false });
   }, []);
 
   return (
-    <div className="mx-auto pt-10">
+    <div className="mx-auto pt-8">
       {user && <Navbar />}
       <main>
         <Routes>

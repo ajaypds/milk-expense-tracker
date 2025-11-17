@@ -60,98 +60,105 @@ const Navbar: React.FC = () => {
   ];
 
   return (
-    <AppBar position="static" color="default" elevation={1}>
-      <Toolbar>
-        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          Milk Expense
-        </Typography>
+    <>
+      {/* <div className="w-full h-10 "></div> */}
+      <AppBar position="static" color="default" elevation={1}>
+        <Toolbar>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+            Milk Expense
+          </Typography>
 
-        {/* Desktop Navigation */}
-        <Box sx={{ display: { xs: "none", md: "flex" }, alignItems: "center" }}>
-          {navLinks.map((link) => (
-            <Link
-              key={link.title}
-              component={NavLink}
-              to={link.path}
-              color="inherit"
-              underline="none"
-              sx={{
-                mx: 2,
-                "&.active": {
-                  fontWeight: "bold",
-                  color: "primary.main",
-                },
-              }}
-            >
-              {link.title}
-            </Link>
-          ))}
-        </Box>
-
-        {/* User Menu (Desktop) */}
-        {user && (
-          <Box sx={{ display: { xs: "none", md: "flex" }, alignItems: "center" }}>
-            <IconButton
-              onClick={handleUserMenuOpen}
-              color="inherit"
-              sx={{ ml: 2 }}
-            >
-              <Avatar
-                alt={user.displayName || "User"}
-                src={user.photoURL || undefined}
-                sx={{ width: 32, height: 32 }}
-              />
-            </IconButton>
-            <Menu
-              anchorEl={userMenuAnchorEl}
-              open={isUserMenuOpen}
-              onClose={handleUserMenuClose}
-              anchorOrigin={{
-                vertical: "bottom",
-                horizontal: "right",
-              }}
-              transformOrigin={{
-                vertical: "top",
-                horizontal: "right",
-              }}
-              keepMounted
-            >
-              <MenuItem onClick={handleLogout}>Logout</MenuItem>
-            </Menu>
-          </Box>
-        )}
-
-        {/* Mobile Navigation */}
-        <Box sx={{ display: { xs: "flex", md: "none" } }}>
-          <IconButton
-            edge="start"
-            color="inherit"
-            aria-label="menu"
-            onClick={handleMobileMenuOpen}
-          >
-            <MenuIcon />
-          </IconButton>
-          <Menu
-            anchorEl={mobileMenuAnchorEl}
-            open={isMobileMenuOpen}
-            onClose={handleMobileMenuClose}
-            sx={{ display: { xs: "block", md: "none" } }}
+          {/* Desktop Navigation */}
+          <Box
+            sx={{ display: { xs: "none", md: "flex" }, alignItems: "center" }}
           >
             {navLinks.map((link) => (
-              <MenuItem
+              <Link
                 key={link.title}
-                onClick={handleMobileMenuClose}
                 component={NavLink}
                 to={link.path}
+                color="inherit"
+                underline="none"
+                sx={{
+                  mx: 2,
+                  "&.active": {
+                    fontWeight: "bold",
+                    color: "primary.main",
+                  },
+                }}
               >
                 {link.title}
-              </MenuItem>
+              </Link>
             ))}
-            {user && <MenuItem onClick={handleLogout}>Logout</MenuItem>}
-          </Menu>
-        </Box>
-      </Toolbar>
-    </AppBar>
+          </Box>
+
+          {/* User Menu (Desktop) */}
+          {user && (
+            <Box
+              sx={{ display: { xs: "none", md: "flex" }, alignItems: "center" }}
+            >
+              <IconButton
+                onClick={handleUserMenuOpen}
+                color="inherit"
+                sx={{ ml: 2 }}
+              >
+                <Avatar
+                  alt={user.displayName || "User"}
+                  src={user.photoURL || undefined}
+                  sx={{ width: 32, height: 32 }}
+                />
+              </IconButton>
+              <Menu
+                anchorEl={userMenuAnchorEl}
+                open={isUserMenuOpen}
+                onClose={handleUserMenuClose}
+                anchorOrigin={{
+                  vertical: "bottom",
+                  horizontal: "right",
+                }}
+                transformOrigin={{
+                  vertical: "top",
+                  horizontal: "right",
+                }}
+                keepMounted
+              >
+                <MenuItem onClick={handleLogout}>Logout</MenuItem>
+              </Menu>
+            </Box>
+          )}
+
+          {/* Mobile Navigation */}
+          <Box sx={{ display: { xs: "flex", md: "none" } }}>
+            <IconButton
+              edge="start"
+              color="inherit"
+              aria-label="menu"
+              onClick={handleMobileMenuOpen}
+            >
+              <MenuIcon />
+            </IconButton>
+            <Menu
+              anchorEl={mobileMenuAnchorEl}
+              open={isMobileMenuOpen}
+              onClose={handleMobileMenuClose}
+              sx={{ display: { xs: "block", md: "none" } }}
+            >
+              {navLinks.map((link) => (
+                <MenuItem
+                  key={link.title}
+                  onClick={handleMobileMenuClose}
+                  component={NavLink}
+                  to={link.path}
+                >
+                  {link.title}
+                </MenuItem>
+              ))}
+              {user && <MenuItem onClick={handleLogout}>Logout</MenuItem>}
+            </Menu>
+          </Box>
+        </Toolbar>
+      </AppBar>
+    </>
   );
 };
 
