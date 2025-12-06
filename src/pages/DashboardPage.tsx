@@ -88,13 +88,12 @@ const DashboardPage: React.FC = () => {
             const entries = entriesByPeriod[p];
             const isLoading = entries === undefined || entries === null;
             return (
-              <Paper key={p} className="p-6">
-                <MonthlySummary
-                  monthPeriod={p}
-                  entries={entries ?? undefined}
-                  loading={isLoading}
-                />
-              </Paper>
+              <MonthlySummary
+                key={p}
+                monthPeriod={p}
+                entries={entries ?? undefined}
+                loading={isLoading}
+              />
             );
           });
         })()}

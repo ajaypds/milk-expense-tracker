@@ -14,7 +14,10 @@ import {
   Link,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
+import Brightness4Icon from "@mui/icons-material/Brightness4";
+import Brightness7Icon from "@mui/icons-material/Brightness7";
 import { signOut } from "firebase/auth";
+import { useAppTheme } from "../context/ThemeContext";
 
 const Navbar: React.FC = () => {
   const [user] = useAuthState(auth);
@@ -23,6 +26,7 @@ const Navbar: React.FC = () => {
   );
   const [mobileMenuAnchorEl, setMobileMenuAnchorEl] =
     useState<null | HTMLElement>(null);
+  const { mode, toggleTheme } = useAppTheme();
 
   const isUserMenuOpen = Boolean(userMenuAnchorEl);
   const isMobileMenuOpen = Boolean(mobileMenuAnchorEl);
@@ -62,7 +66,7 @@ const Navbar: React.FC = () => {
   return (
     <>
       {/* <div className="w-full h-10 "></div> */}
-      <AppBar position="static" color="default" elevation={1}>
+      <AppBar position="static" color="default" elevation={1} className="pt-8">
         <Toolbar>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             Milk Expense
@@ -97,6 +101,13 @@ const Navbar: React.FC = () => {
             <Box
               sx={{ display: { xs: "none", md: "flex" }, alignItems: "center" }}
             >
+              <IconButton
+                onClick={toggleTheme}
+                color="inherit"
+                sx={{ ml: 2 }}
+              >
+                 {mode === "dark" ? <Brightness7Icon /> : <Brightness4Icon />}
+              </IconButton>
               <IconButton
                 onClick={handleUserMenuOpen}
                 color="inherit"
@@ -143,6 +154,15 @@ const Navbar: React.FC = () => {
               onClose={handleMobileMenuClose}
               sx={{ display: { xs: "block", md: "none" } }}
             >
+              <MenuItem onClick={() => {
+                toggleTheme();
+                handleMobileMenuClose();
+              }}>
+                 {mode === "dark" ? <Brightness7Icon /> : <Brightness4Icon />}
+                 <span style={{ marginLeft: "8px" }}>
+                   {mode === "dark" ? "Light Mode" : "Dark Mode"}
+                 </span>
+              </MenuItem>
               {navLinks.map((link) => (
                 <MenuItem
                   key={link.title}

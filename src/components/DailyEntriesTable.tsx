@@ -155,7 +155,7 @@ const DailyEntriesTable: React.FC<Props> = ({ onEdit }) => {
               label="Billing period"
               onChange={(e) => setPeriodFilter(String(e.target.value))}
             >
-              <MenuItem value="All">All</MenuItem>
+              {/* <MenuItem value="All">All</MenuItem> */}
               {/* No far-future automatic period is shown to avoid suggesting incomplete future cycles */}
               {currentBillingPeriod &&
                 !periods.includes(currentBillingPeriod) && (
