@@ -181,10 +181,18 @@ const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
               label="Quantity"
               onChange={(e) => setQuantity(Number(e.target.value))}
             >
+              <MenuItem value={0.25}>0.25 L</MenuItem>
               <MenuItem value={0.5}>0.5 L</MenuItem>
+              <MenuItem value={0.75}>0.75 L</MenuItem>
               <MenuItem value={1}>1 L</MenuItem>
+              <MenuItem value={1.25}>1.25 L</MenuItem>
               <MenuItem value={1.5}>1.5 L</MenuItem>
+              <MenuItem value={1.75}>1.75 L</MenuItem>
               <MenuItem value={2}>2 L</MenuItem>
+              <MenuItem value={2.25}>2.25 L</MenuItem>
+              <MenuItem value={2.5}>2.5 L</MenuItem>
+              <MenuItem value={2.75}>2.75 L</MenuItem>
+              <MenuItem value={3}>3 L</MenuItem>
             </Select>
           </FormControl>
         </Grid>

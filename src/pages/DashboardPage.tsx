@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Container, Paper, Typography, Box } from "@mui/material";
+import { Container, Typography, Box } from "@mui/material";
 import type { MilkEntry } from "../types";
 import MonthlySummary from "../components/MonthlySummary";
 import { getMonthPeriod } from "../utils/dateUtils";
