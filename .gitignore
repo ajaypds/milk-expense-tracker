@@ -25,3 +25,9 @@ dist-ssr
 
 # Environment variables
 .env
+.env.*
+!.env.example
+
+# Service account & credentials
+*serviceAccount*.json
+serviceAccountKey.json
