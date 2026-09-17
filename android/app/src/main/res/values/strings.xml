@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">milk-expense</string>
-    <string name="title_activity_main">milk-expense</string>
+    <string name="app_name">Milk Expense</string>
+    <string name="title_activity_main">Milk Expense</string>
     <string name="package_name">com.example.milkapp</string>
     <string name="custom_url_scheme">com.example.milkapp</string>
 </resources>
