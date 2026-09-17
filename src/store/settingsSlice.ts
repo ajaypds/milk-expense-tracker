@@ -15,6 +15,10 @@ const initialState: SettingsState = {
     effectiveFrom: '2020-01-01',
     rateHistory: [],
     cycleStartDay: 10,
+    vendorName: '',
+    vendorUpiId: '',
+    vendorPhone: '',
+    advanceBalance: 0,
     paymentStatus: {},
   },
   loading: false,
@@ -28,14 +32,17 @@ export const fetchSettings = createAsyncThunk('settings/fetchSettings', async ()
   } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  // 1. Fetch user preferences
+  // 1. Fetch user preferences & vendor details
   const { data: userSettingsData } = await supabase
     .from('user_settings')
-    .select('cycle_start_day')
+    .select('cycle_start_day, vendor_name, vendor_upi_id, vendor_phone')
     .eq('user_id', user.id)
     .maybeSingle();
 
   const cycleStartDay = userSettingsData?.cycle_start_day ?? 10;
+  const vendorName = userSettingsData?.vendor_name ?? '';
+  const vendorUpiId = userSettingsData?.vendor_upi_id ?? '';
+  const vendorPhone = userSettingsData?.vendor_phone ?? '';
 
   // 2. Fetch full rate history ordered descending
   const { data: rateHistoryData, error: rateError } = await supabase
@@ -56,7 +63,18 @@ export const fetchSettings = createAsyncThunk('settings/fetchSettings', async ()
   const activeRate = rateHistory.length > 0 ? rateHistory[0].rate : 55;
   const activeEffectiveFrom = rateHistory.length > 0 ? rateHistory[0].effective_from : '2020-01-01';
 
-  // 3. Fetch all billing period payment statuses
+  // 3. Fetch latest advance balance from payment_ledger
+  const { data: ledgerData } = await supabase
+    .from('payment_ledger')
+    .select('advance_balance')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const advanceBalance = ledgerData?.advance_balance ? Number(ledgerData.advance_balance) : 0;
+
+  // 4. Fetch all billing period payment statuses
   const { data: periodsData, error: periodsError } = await supabase
     .from('billing_periods')
     .select('billing_period, payment_status')
@@ -74,6 +92,10 @@ export const fetchSettings = createAsyncThunk('settings/fetchSettings', async ()
     effectiveFrom: activeEffectiveFrom,
     rateHistory,
     cycleStartDay,
+    vendorName,
+    vendorUpiId,
+    vendorPhone,
+    advanceBalance,
     paymentStatus,
   } as Settings;
 });
@@ -133,6 +155,81 @@ export const updateCycleStartDay = createAsyncThunk(
   }
 );
 
+// Async thunk to update vendor information (UPI, phone, name)
+export const updateVendorSettings = createAsyncThunk(
+  'settings/updateVendorSettings',
+  async (vendorInfo: { vendorName?: string; vendorUpiId?: string; vendorPhone?: string }) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('user_settings').upsert({
+      user_id: user.id,
+      vendor_name: vendorInfo.vendorName,
+      vendor_upi_id: vendorInfo.vendorUpiId,
+      vendor_phone: vendorInfo.vendorPhone,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) throw error;
+
+    return vendorInfo;
+  }
+);
+
+// Async thunk to record payment with advance/carryover ledger
+export const recordPaymentWithLedger = createAsyncThunk(
+  'settings/recordPaymentWithLedger',
+  async (payload: {
+    billingPeriod: string;
+    amountDue: number;
+    amountPaid: number;
+    effectiveRate: number;
+    paymentMethod?: string;
+    notes?: string;
+  }) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const advanceBalance = Number((payload.amountPaid - payload.amountDue).toFixed(2));
+
+    // 1. Insert into payment_ledger
+    const { error: ledgerError } = await supabase.from('payment_ledger').insert({
+      user_id: user.id,
+      billing_period: payload.billingPeriod,
+      amount_paid: payload.amountPaid,
+      advance_balance: advanceBalance,
+      payment_method: payload.paymentMethod || 'UPI',
+      created_at: new Date().toISOString(),
+    });
+    if (ledgerError) console.error('Ledger error:', ledgerError);
+
+    // 2. Update billing_periods
+    const { error: bpError } = await supabase.from('billing_periods').upsert(
+      {
+        user_id: user.id,
+        billing_period: payload.billingPeriod,
+        payment_status: 'Paid',
+        effective_rate: payload.effectiveRate,
+        total_amount: payload.amountDue,
+        paid_at: new Date().toISOString(),
+        notes: payload.notes || (advanceBalance !== 0 ? `Paid: ₹${payload.amountPaid} (Advance: ₹${advanceBalance})` : undefined),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,billing_period' }
+    );
+    if (bpError) throw bpError;
+
+    return {
+      billingPeriod: payload.billingPeriod,
+      advanceBalance,
+    };
+  }
+);
+
 // Async thunk to update settings / payment status in Supabase
 export const updateSettings = createAsyncThunk(
   'settings/updateSettings',
@@ -151,8 +248,7 @@ export const updateSettings = createAsyncThunk(
       for (const [period, status] of Object.entries(newSettings.paymentStatus)) {
         if (currentSettings.paymentStatus[period] !== status) {
           const isPaid = status === 'Paid';
-          
-          // If marking as paid, freeze effective rate
+
           const updatePayload: Record<string, unknown> = {
             user_id: user.id,
             billing_period: period,
@@ -209,7 +305,6 @@ const settingsSlice = createSlice({
       })
       .addCase(addMilkRate.fulfilled, (state, action: PayloadAction<MilkRateHistory>) => {
         const newRate = action.payload;
-        // Prepend to rate history
         const existingIdx = (state.settings.rateHistory || []).findIndex(
           (r) => r.effective_from === newRate.effective_from
         );
@@ -220,7 +315,6 @@ const settingsSlice = createSlice({
             (a, b) => (a.effective_from < b.effective_from ? 1 : -1)
           );
         }
-        // If this rate is newer or equal to today, update active milkRate
         if (state.settings.rateHistory && state.settings.rateHistory.length > 0) {
           state.settings.milkRate = state.settings.rateHistory[0].rate;
           state.settings.effectiveFrom = state.settings.rateHistory[0].effective_from;
@@ -228,6 +322,15 @@ const settingsSlice = createSlice({
       })
       .addCase(updateCycleStartDay.fulfilled, (state, action: PayloadAction<number>) => {
         state.settings.cycleStartDay = action.payload;
+      })
+      .addCase(updateVendorSettings.fulfilled, (state, action) => {
+        if (action.payload.vendorName !== undefined) state.settings.vendorName = action.payload.vendorName;
+        if (action.payload.vendorUpiId !== undefined) state.settings.vendorUpiId = action.payload.vendorUpiId;
+        if (action.payload.vendorPhone !== undefined) state.settings.vendorPhone = action.payload.vendorPhone;
+      })
+      .addCase(recordPaymentWithLedger.fulfilled, (state, action) => {
+        state.settings.paymentStatus[action.payload.billingPeriod] = 'Paid';
+        state.settings.advanceBalance = action.payload.advanceBalance;
       })
       .addCase(updateSettings.fulfilled, (state, action: PayloadAction<Settings>) => {
         state.settings = action.payload;

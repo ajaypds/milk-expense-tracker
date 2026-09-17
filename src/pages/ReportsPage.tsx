@@ -28,12 +28,18 @@ import CloseIcon from "@mui/icons-material/Close";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import dayjs from "dayjs";
+import { useDispatch, useSelector } from "react-redux";
+import type { AppDispatch, RootState } from "../store/store";
+import { fetchSettings } from "../store/settingsSlice";
+import WhatsAppShareButton from "../components/WhatsAppShareButton";
 import { supabase } from "../supabase/client";
 import { useAuth } from "../context/AuthContext";
 import { getPeriodDates } from "../utils/dateUtils";
 import type { PaidMonthReport, MilkEntry } from "../types";
 
 const ReportsPage: React.FC = () => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { settings } = useSelector((state: RootState) => state.settings);
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [paidMonths, setPaidMonths] = useState<PaidMonthReport[]>([]);
@@ -45,6 +51,7 @@ const ReportsPage: React.FC = () => {
   const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
+    dispatch(fetchSettings());
     const fetchPaidReports = async () => {
       if (!user) return;
       setLoading(true);
@@ -135,6 +142,11 @@ const ReportsPage: React.FC = () => {
     setDetailPeriod(null);
     setDetailEntries([]);
   };
+
+  const activeDetailReport = useMemo(
+    () => paidMonths.find((p) => p.billingPeriod === detailPeriod),
+    [paidMonths, detailPeriod]
+  );
 
   return (
     <Container maxWidth="lg" className="py-6">
@@ -346,8 +358,22 @@ const ReportsPage: React.FC = () => {
             </TableContainer>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDetails} color="primary">
+        <DialogActions className="px-6 py-3 flex justify-between">
+          {detailPeriod && activeDetailReport ? (
+            <WhatsAppShareButton
+              monthPeriod={detailPeriod}
+              totalQuantity={activeDetailReport.totalLiters}
+              rate={activeDetailReport.effectiveRate}
+              totalAmount={activeDetailReport.totalAmount}
+              paymentStatus="Paid"
+              entries={detailEntries}
+              vendorPhone={settings.vendorPhone}
+              vendorName={settings.vendorName}
+            />
+          ) : (
+            <Box />
+          )}
+          <Button onClick={handleCloseDetails} color="inherit">
             Close
           </Button>
         </DialogActions>
