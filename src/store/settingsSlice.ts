@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import { supabase } from '../supabase/client';
-import type { Settings } from '../types';
+import type { Settings, MilkRateHistory } from '../types';
 
 interface SettingsState {
   settings: Settings;
@@ -12,6 +12,9 @@ interface SettingsState {
 const initialState: SettingsState = {
   settings: {
     milkRate: 55, // Default rate
+    effectiveFrom: '2020-01-01',
+    rateHistory: [],
+    cycleStartDay: 10,
     paymentStatus: {},
   },
   loading: false,
@@ -25,20 +28,35 @@ export const fetchSettings = createAsyncThunk('settings/fetchSettings', async ()
   } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  // Fetch the latest active milk rate
-  const { data: rateData, error: rateError } = await supabase
-    .from('milk_rates')
-    .select('rate')
+  // 1. Fetch user preferences
+  const { data: userSettingsData } = await supabase
+    .from('user_settings')
+    .select('cycle_start_day')
     .eq('user_id', user.id)
-    .order('effective_from', { ascending: false })
-    .limit(1)
     .maybeSingle();
 
-  if (rateError) console.warn('Error fetching milk rate:', rateError);
+  const cycleStartDay = userSettingsData?.cycle_start_day ?? 10;
 
-  const milkRate = rateData ? Number(rateData.rate) : 55;
+  // 2. Fetch full rate history ordered descending
+  const { data: rateHistoryData, error: rateError } = await supabase
+    .from('milk_rates')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('effective_from', { ascending: false });
 
-  // Fetch all billing period payment statuses
+  if (rateError) console.warn('Error fetching milk rates:', rateError);
+
+  const rateHistory: MilkRateHistory[] = (rateHistoryData || []).map((r) => ({
+    id: r.id,
+    rate: Number(r.rate),
+    effective_from: r.effective_from,
+    created_at: r.created_at,
+  }));
+
+  const activeRate = rateHistory.length > 0 ? rateHistory[0].rate : 55;
+  const activeEffectiveFrom = rateHistory.length > 0 ? rateHistory[0].effective_from : '2020-01-01';
+
+  // 3. Fetch all billing period payment statuses
   const { data: periodsData, error: periodsError } = await supabase
     .from('billing_periods')
     .select('billing_period, payment_status')
@@ -52,12 +70,70 @@ export const fetchSettings = createAsyncThunk('settings/fetchSettings', async ()
   });
 
   return {
-    milkRate,
+    milkRate: activeRate,
+    effectiveFrom: activeEffectiveFrom,
+    rateHistory,
+    cycleStartDay,
     paymentStatus,
   } as Settings;
 });
 
-// Async thunk to update settings in Supabase
+// Async thunk to add a new versioned milk rate with effective_from date
+export const addMilkRate = createAsyncThunk(
+  'settings/addMilkRate',
+  async ({ rate, effectiveFrom }: { rate: number; effectiveFrom: string }) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase
+      .from('milk_rates')
+      .upsert(
+        {
+          user_id: user.id,
+          rate,
+          effective_from: effectiveFrom,
+          created_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,effective_from' }
+      )
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      rate: Number(data.rate),
+      effective_from: data.effective_from,
+      created_at: data.created_at,
+    } as MilkRateHistory;
+  }
+);
+
+// Async thunk to update billing cycle start day
+export const updateCycleStartDay = createAsyncThunk(
+  'settings/updateCycleStartDay',
+  async (cycleStartDay: number) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.from('user_settings').upsert({
+      user_id: user.id,
+      cycle_start_day: cycleStartDay,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) throw error;
+
+    return cycleStartDay;
+  }
+);
+
+// Async thunk to update settings / payment status in Supabase
 export const updateSettings = createAsyncThunk(
   'settings/updateSettings',
   async (newSettings: Partial<Settings>, { getState }) => {
@@ -70,33 +146,27 @@ export const updateSettings = createAsyncThunk(
     const currentSettings = state.settings.settings;
     const updatedSettings: Settings = { ...currentSettings, ...newSettings };
 
-    // 1. If milkRate is provided and changed, record in milk_rates
-    if (newSettings.milkRate !== undefined && newSettings.milkRate !== currentSettings.milkRate) {
-      const today = new Date().toISOString().split('T')[0];
-      const { error: rateError } = await supabase.from('milk_rates').upsert(
-        {
-          user_id: user.id,
-          rate: Number(newSettings.milkRate),
-          effective_from: today,
-        },
-        { onConflict: 'user_id,effective_from' }
-      );
-      if (rateError) console.error('Failed to update milk_rates:', rateError);
-    }
-
-    // 2. If paymentStatus is provided, update billing_periods
+    // If paymentStatus is updated, persist in billing_periods
     if (newSettings.paymentStatus) {
       for (const [period, status] of Object.entries(newSettings.paymentStatus)) {
         if (currentSettings.paymentStatus[period] !== status) {
           const isPaid = status === 'Paid';
+          
+          // If marking as paid, freeze effective rate
+          const updatePayload: Record<string, unknown> = {
+            user_id: user.id,
+            billing_period: period,
+            payment_status: status,
+            paid_at: isPaid ? new Date().toISOString() : null,
+            updated_at: new Date().toISOString(),
+          };
+
+          if (isPaid) {
+            updatePayload.effective_rate = currentSettings.milkRate;
+          }
+
           const { error: bpError } = await supabase.from('billing_periods').upsert(
-            {
-              user_id: user.id,
-              billing_period: period,
-              payment_status: status,
-              paid_at: isPaid ? new Date().toISOString() : null,
-              updated_at: new Date().toISOString(),
-            },
+            updatePayload,
             { onConflict: 'user_id,billing_period' }
           );
           if (bpError) console.error(`Failed to update billing period ${period}:`, bpError);
@@ -115,7 +185,10 @@ const settingsSlice = createSlice({
     setMilkRate: (state, action: PayloadAction<number>) => {
       state.settings.milkRate = action.payload;
     },
-    setPaymentStatus: (state, action: PayloadAction<{ monthPeriod: string; status: 'Paid' | 'Unpaid' }>) => {
+    setPaymentStatus: (
+      state,
+      action: PayloadAction<{ monthPeriod: string; status: 'Paid' | 'Unpaid' }>
+    ) => {
       const { monthPeriod, status } = action.payload;
       state.settings.paymentStatus[monthPeriod] = status;
     },
@@ -133,6 +206,28 @@ const settingsSlice = createSlice({
       .addCase(fetchSettings.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Failed to fetch settings';
+      })
+      .addCase(addMilkRate.fulfilled, (state, action: PayloadAction<MilkRateHistory>) => {
+        const newRate = action.payload;
+        // Prepend to rate history
+        const existingIdx = (state.settings.rateHistory || []).findIndex(
+          (r) => r.effective_from === newRate.effective_from
+        );
+        if (existingIdx !== -1) {
+          state.settings.rateHistory![existingIdx] = newRate;
+        } else {
+          state.settings.rateHistory = [newRate, ...(state.settings.rateHistory || [])].sort(
+            (a, b) => (a.effective_from < b.effective_from ? 1 : -1)
+          );
+        }
+        // If this rate is newer or equal to today, update active milkRate
+        if (state.settings.rateHistory && state.settings.rateHistory.length > 0) {
+          state.settings.milkRate = state.settings.rateHistory[0].rate;
+          state.settings.effectiveFrom = state.settings.rateHistory[0].effective_from;
+        }
+      })
+      .addCase(updateCycleStartDay.fulfilled, (state, action: PayloadAction<number>) => {
+        state.settings.cycleStartDay = action.payload;
       })
       .addCase(updateSettings.fulfilled, (state, action: PayloadAction<Settings>) => {
         state.settings = action.payload;

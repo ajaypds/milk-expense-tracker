@@ -1,6 +1,7 @@
 import React from 'react';
-import { Container, Paper, Typography } from '@mui/material';
+import { Container, Typography, Box } from '@mui/material';
 import RateEditor from '../components/RateEditor';
+import BillingCycleEditor from '../components/BillingCycleEditor';
 
 const SettingsPage: React.FC = () => {
   const [version, setVersion] = React.useState<string>("");
@@ -22,9 +23,11 @@ const SettingsPage: React.FC = () => {
       <Typography variant="h4" component="h1" className="font-bold mb-6">
         Settings
       </Typography>
-      <Paper className="p-6 mb-6">
+
+      <Box className="flex flex-col gap-6">
         <RateEditor />
-      </Paper>
+        <BillingCycleEditor />
+      </Box>
 
       {version && (
         <Typography variant="caption" className="block text-center text-gray-400 mt-8">

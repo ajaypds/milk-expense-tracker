@@ -3,7 +3,7 @@ import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../store/store";
 import { fetchEntriesForPeriod } from "../store/milkSlice";
 import { fetchSettings, updateSettings } from "../store/settingsSlice";
-import { getMonthPeriod } from "../utils/dateUtils";
+import { getMonthPeriod, getPeriodDates } from "../utils/dateUtils";
 import {
   Card,
   CardContent,
@@ -58,15 +58,24 @@ const MonthlySummary: React.FC<Props> = ({
   const storeEntries = useSelector((state: RootState) => state.milk.entries);
   const entries: import("../types").MilkEntry[] = propEntries ?? storeEntries;
 
+  const appliedRate = useMemo(() => {
+    if (!settings.rateHistory || settings.rateHistory.length === 0) {
+      return settings.milkRate || 55;
+    }
+    const dates = getPeriodDates(currentMonthPeriod, settings.cycleStartDay ?? 10);
+    const match = settings.rateHistory.find((r) => r.effective_from <= dates.endDate);
+    return match ? match.rate : settings.milkRate || 55;
+  }, [settings.rateHistory, settings.milkRate, settings.cycleStartDay, currentMonthPeriod]);
+
   const summary = useMemo(() => {
     const totalQuantity = entries.reduce(
       (acc, entry) => acc + (entry.milkTaken ? entry.quantity : 0),
       0
     );
-    const totalAmount = totalQuantity * settings.milkRate;
+    const totalAmount = totalQuantity * appliedRate;
     const paymentStatus = (settings.paymentStatus[currentMonthPeriod] || "Unpaid") as "Paid" | "Unpaid";
-    return { totalQuantity, totalAmount, paymentStatus };
-  }, [entries, settings.milkRate, settings.paymentStatus, currentMonthPeriod]);
+    return { totalQuantity, totalAmount, paymentStatus, appliedRate };
+  }, [entries, appliedRate, settings.paymentStatus, currentMonthPeriod]);
 
   const handleTogglePaymentStatus = () => {
     const newStatus = summary.paymentStatus === "Paid" ? "Unpaid" : "Paid";
@@ -139,10 +148,10 @@ const MonthlySummary: React.FC<Props> = ({
           <Grid size={{ xs: 6, md: 4 }}>
             <div className="bg-purple-50 dark:bg-slate-800 p-4 rounded-xl h-full border border-purple-100 dark:border-slate-700">
               <Typography variant="caption" className="text-gray-500 dark:text-gray-400 font-semibold uppercase tracking-wider block mb-1">
-                Current Rate
+                Applied Rate
               </Typography>
               <Typography variant="h4" className="text-purple-600 dark:text-purple-400 font-bold">
-                ₹{settings.milkRate} <span className="text-lg text-gray-400">/L</span>
+                ₹{summary.appliedRate} <span className="text-lg text-gray-400">/L</span>
               </Typography>
             </div>
           </Grid>

@@ -58,6 +58,7 @@ const Navbar: React.FC = () => {
   const navLinks = [
     { title: "Daily Entry", path: "/" },
     { title: "Dashboard", path: "/dashboard" },
+    { title: "Reports", path: "/reports" },
     { title: "Settings", path: "/settings" },
   ];
 
