@@ -47,8 +47,25 @@ const AppContent: React.FC = () => {
       }
     });
 
+    const appUrlOpenListener = CapacitorApp.addListener("appUrlOpen", (data) => {
+      console.log("Deep link opened:", data.url);
+      try {
+        if (data.url.includes("milkexpense://")) {
+          const hashIdx = data.url.indexOf("#");
+          if (hashIdx !== -1) {
+            const hash = data.url.substring(hashIdx);
+            window.location.hash = hash;
+          }
+          navigate("/login");
+        }
+      } catch (err) {
+        console.warn("Error processing deep link URL:", err);
+      }
+    });
+
     return () => {
       backButtonListener.then((listener) => listener.remove());
+      appUrlOpenListener.then((listener) => listener.remove());
     };
   }, [navigate, location]);
 
