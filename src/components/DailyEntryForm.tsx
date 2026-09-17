@@ -4,6 +4,7 @@ import type { AppDispatch, RootState } from "../store/store";
 import { upsertMilkEntry } from "../store/milkSlice";
 import { supabase } from "../supabase/client";
 import type { MilkEntry } from "../types";
+import { offlineSyncService } from "../services/offlineSyncService";
 import {
   FormControlLabel,
   Checkbox,
@@ -57,6 +58,17 @@ const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
   // When the date changes, check for an existing entry and pre-fill the form
   useEffect(() => {
     const fetchEntryForDate = async () => {
+      // Check offline cache first if offline
+      if (!offlineSyncService.isOnline()) {
+        const cached = offlineSyncService.getCachedEntries();
+        const match = cached.find((e) => e.date === date);
+        if (match) {
+          setMilkTaken(match.milkTaken);
+          setQuantity(match.quantity);
+        }
+        return;
+      }
+
       try {
         const {
           data: { user },
@@ -78,7 +90,13 @@ const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
           setQuantity(1);
         }
       } catch (err) {
-        console.warn("Could not fetch entry for date:", err);
+        console.warn("Could not fetch entry for date, checking cache:", err);
+        const cached = offlineSyncService.getCachedEntries();
+        const match = cached.find((e) => e.date === date);
+        if (match) {
+          setMilkTaken(match.milkTaken);
+          setQuantity(match.quantity);
+        }
       }
     };
 
@@ -91,7 +109,7 @@ const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
 
     // Only auto-fetch when there's no explicit initialEntry controlling the form
     if (!initialEntry) fetchEntryForDate();
-  }, [date, initialEntry]);
+  }, [date, initialEntry, paymentStatus]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,7 +134,14 @@ const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
       if (onSave) {
         onSave(savedEntry || { date, milkTaken, quantity: finalQuantity });
       }
-      setSnackbar({ open: true, message: "Entry saved", severity: "success" });
+      const isOffline = !offlineSyncService.isOnline();
+      setSnackbar({
+        open: true,
+        message: isOffline
+          ? "Saved offline. Will sync when connected to internet."
+          : "Entry saved successfully",
+        severity: isOffline ? "info" : "success",
+      });
     } else {
       // Show error toast
       const errMessage = res.error?.message || "Failed to save entry";

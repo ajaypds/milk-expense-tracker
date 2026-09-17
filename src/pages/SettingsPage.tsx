@@ -3,6 +3,7 @@ import { Container, Typography, Box } from '@mui/material';
 import RateEditor from '../components/RateEditor';
 import BillingCycleEditor from '../components/BillingCycleEditor';
 import VendorSettingsEditor from '../components/VendorSettingsEditor';
+import ReminderSettingsEditor from '../components/ReminderSettingsEditor';
 
 const SettingsPage: React.FC = () => {
   const [version, setVersion] = React.useState<string>("");
@@ -29,6 +30,7 @@ const SettingsPage: React.FC = () => {
         <RateEditor />
         <BillingCycleEditor />
         <VendorSettingsEditor />
+        <ReminderSettingsEditor />
       </Box>
 
       {version && (

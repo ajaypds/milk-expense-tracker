@@ -19,6 +19,8 @@ const initialState: SettingsState = {
     vendorUpiId: '',
     vendorPhone: '',
     advanceBalance: 0,
+    dailyReminderEnabled: true,
+    dailyReminderTime: '20:30',
     paymentStatus: {},
   },
   loading: false,
@@ -35,7 +37,7 @@ export const fetchSettings = createAsyncThunk('settings/fetchSettings', async ()
   // 1. Fetch user preferences & vendor details
   const { data: userSettingsData } = await supabase
     .from('user_settings')
-    .select('cycle_start_day, vendor_name, vendor_upi_id, vendor_phone')
+    .select('cycle_start_day, vendor_name, vendor_upi_id, vendor_phone, daily_reminder_enabled, daily_reminder_time')
     .eq('user_id', user.id)
     .maybeSingle();
 
@@ -43,6 +45,9 @@ export const fetchSettings = createAsyncThunk('settings/fetchSettings', async ()
   const vendorName = userSettingsData?.vendor_name ?? '';
   const vendorUpiId = userSettingsData?.vendor_upi_id ?? '';
   const vendorPhone = userSettingsData?.vendor_phone ?? '';
+  const dailyReminderEnabled = userSettingsData?.daily_reminder_enabled ?? true;
+  const rawReminderTime = userSettingsData?.daily_reminder_time;
+  const dailyReminderTime = rawReminderTime ? String(rawReminderTime).slice(0, 5) : '20:30';
 
   // 2. Fetch full rate history ordered descending
   const { data: rateHistoryData, error: rateError } = await supabase
@@ -96,6 +101,8 @@ export const fetchSettings = createAsyncThunk('settings/fetchSettings', async ()
     vendorUpiId,
     vendorPhone,
     advanceBalance,
+    dailyReminderEnabled,
+    dailyReminderTime,
     paymentStatus,
   } as Settings;
 });
@@ -175,6 +182,30 @@ export const updateVendorSettings = createAsyncThunk(
     if (error) throw error;
 
     return vendorInfo;
+  }
+);
+
+// Async thunk to update daily reminder preferences
+export const updateReminderSettings = createAsyncThunk(
+  'settings/updateReminderSettings',
+  async ({ enabled, time }: { enabled: boolean; time: string }) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const formattedTime = time.length === 5 ? `${time}:00` : time;
+
+    const { error } = await supabase.from('user_settings').upsert({
+      user_id: user.id,
+      daily_reminder_enabled: enabled,
+      daily_reminder_time: formattedTime,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) throw error;
+
+    return { enabled, time: formattedTime.slice(0, 5) };
   }
 );
 
@@ -327,6 +358,10 @@ const settingsSlice = createSlice({
         if (action.payload.vendorName !== undefined) state.settings.vendorName = action.payload.vendorName;
         if (action.payload.vendorUpiId !== undefined) state.settings.vendorUpiId = action.payload.vendorUpiId;
         if (action.payload.vendorPhone !== undefined) state.settings.vendorPhone = action.payload.vendorPhone;
+      })
+      .addCase(updateReminderSettings.fulfilled, (state, action) => {
+        state.settings.dailyReminderEnabled = action.payload.enabled;
+        state.settings.dailyReminderTime = action.payload.time;
       })
       .addCase(recordPaymentWithLedger.fulfilled, (state, action) => {
         state.settings.paymentStatus[action.payload.billingPeriod] = 'Paid';

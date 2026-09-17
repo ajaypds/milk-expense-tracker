@@ -3,6 +3,7 @@ import type { PayloadAction } from '@reduxjs/toolkit';
 import { supabase } from '../supabase/client';
 import type { MilkEntry } from '../types';
 import { getMonthPeriod } from '../utils/dateUtils';
+import { offlineSyncService } from '../services/offlineSyncService';
 
 interface MilkState {
   entries: MilkEntry[];
@@ -24,31 +25,58 @@ const initialState: MilkState = {
 export const fetchEntriesForPeriod = createAsyncThunk(
   'milk/fetchEntriesForPeriod',
   async (monthPeriod: string) => {
+    if (!offlineSyncService.isOnline()) {
+      const cached = offlineSyncService.getCachedEntries();
+      return cached.filter((e) => {
+        try {
+          return getMonthPeriod(new Date(e.date)) === monthPeriod;
+        } catch {
+          return e.date.startsWith(monthPeriod);
+        }
+      });
+    }
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
-    const { data, error } = await supabase
-      .from('milk_entries')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('billing_period', monthPeriod)
-      .order('entry_date', { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from('milk_entries')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('billing_period', monthPeriod)
+        .order('entry_date', { ascending: true });
 
-    if (error) {
-      console.error('fetchEntriesForPeriod error:', error);
-      throw error;
+      if (error) throw error;
+
+      const entries = (data || []).map((d) => ({
+        id: d.id,
+        date: d.entry_date,
+        milkTaken: Boolean(d.milk_taken),
+        quantity: Number(d.quantity) || 0,
+      })) as MilkEntry[];
+
+      // Merge and update local cache
+      const cached = offlineSyncService.getCachedEntries();
+      const map = new Map<string, MilkEntry>();
+      cached.forEach((e) => map.set(e.date, e));
+      entries.forEach((e) => map.set(e.date, e));
+      offlineSyncService.cacheEntries(Array.from(map.values()));
+
+      return entries;
+    } catch (err) {
+      console.warn('Network error in fetchEntriesForPeriod, falling back to cache:', err);
+      const cached = offlineSyncService.getCachedEntries();
+      return cached.filter((e) => {
+        try {
+          return getMonthPeriod(new Date(e.date)) === monthPeriod;
+        } catch {
+          return e.date.startsWith(monthPeriod);
+        }
+      });
     }
-
-    const entries = (data || []).map((d) => ({
-      id: d.id,
-      date: d.entry_date,
-      milkTaken: Boolean(d.milk_taken),
-      quantity: Number(d.quantity) || 0,
-    })) as MilkEntry[];
-
-    return entries;
   }
 );
 
@@ -115,52 +143,117 @@ export const fetchDistinctPeriods = createAsyncThunk(
 export const upsertMilkEntry = createAsyncThunk(
   'milk/upsertMilkEntry',
   async (entry: Omit<MilkEntry, 'id'>) => {
+    const optimisticEntry: MilkEntry = {
+      id: entry.date,
+      date: entry.date,
+      milkTaken: Boolean(entry.milkTaken),
+      quantity: entry.milkTaken ? Number(entry.quantity) || 0 : 0,
+    };
+
+    // If device is offline, immediately queue for sync and return optimistic entry
+    if (!offlineSyncService.isOnline()) {
+      offlineSyncService.queuePendingEntry(optimisticEntry);
+      return optimisticEntry;
+    }
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        offlineSyncService.queuePendingEntry(optimisticEntry);
+        return optimisticEntry;
+      }
+
+      const bp = getMonthPeriod(new Date(entry.date));
+      const stored = {
+        user_id: user.id,
+        entry_date: entry.date,
+        milk_taken: Boolean(entry.milkTaken),
+        quantity: entry.milkTaken ? Number(entry.quantity) || 0 : 0,
+        billing_period: bp,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data, error } = await supabase
+        .from('milk_entries')
+        .upsert(stored, { onConflict: 'user_id,entry_date' })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Clean from pending queue if previously queued
+      offlineSyncService.removePendingEntry(entry.date);
+
+      // Ensure billing_periods entry exists for this period
+      try {
+        await supabase.from('billing_periods').upsert(
+          {
+            user_id: user.id,
+            billing_period: bp,
+            payment_status: 'Unpaid',
+          },
+          { onConflict: 'user_id,billing_period', ignoreDuplicates: true }
+        );
+      } catch (err) {
+        console.warn('Failed to ensure billing_periods row', err);
+      }
+
+      return {
+        id: data.id,
+        date: data.entry_date,
+        milkTaken: Boolean(data.milk_taken),
+        quantity: Number(data.quantity) || 0,
+      } as MilkEntry;
+    } catch (err) {
+      console.warn('Offline / network error during upsertMilkEntry, queuing locally:', err);
+      offlineSyncService.queuePendingEntry(optimisticEntry);
+      return optimisticEntry;
+    }
+  }
+);
+
+// Thunk to sync any pending offline entries when connection is restored
+export const syncPendingEntries = createAsyncThunk(
+  'milk/syncPendingEntries',
+  async () => {
+    if (!offlineSyncService.isOnline()) return 0;
+    const pending = offlineSyncService.getPendingQueue();
+    if (pending.length === 0) return 0;
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) throw new Error('Not authenticated');
+    if (!user) return 0;
 
-    const bp = getMonthPeriod(new Date(entry.date));
-    const stored = {
-      user_id: user.id,
-      entry_date: entry.date,
-      milk_taken: Boolean(entry.milkTaken),
-      quantity: entry.milkTaken ? Number(entry.quantity) || 0 : 0,
-      billing_period: bp,
-      updated_at: new Date().toISOString(),
-    };
-
-    const { data, error } = await supabase
-      .from('milk_entries')
-      .upsert(stored, { onConflict: 'user_id,entry_date' })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('upsertMilkEntry error:', error);
-      throw error;
-    }
-
-    // Ensure billing_periods entry exists for this period
-    try {
-      await supabase.from('billing_periods').upsert(
-        {
+    let syncedCount = 0;
+    for (const item of pending) {
+      try {
+        const bp = getMonthPeriod(new Date(item.date));
+        const stored = {
           user_id: user.id,
+          entry_date: item.date,
+          milk_taken: Boolean(item.milkTaken),
+          quantity: item.milkTaken ? Number(item.quantity) || 0 : 0,
           billing_period: bp,
-          payment_status: 'Unpaid',
-        },
-        { onConflict: 'user_id,billing_period', ignoreDuplicates: true }
-      );
-    } catch (err) {
-      console.warn('Failed to ensure billing_periods row', err);
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error } = await supabase
+          .from('milk_entries')
+          .upsert(stored, { onConflict: 'user_id,entry_date' });
+
+        if (!error) {
+          offlineSyncService.removePendingEntry(item.date);
+          syncedCount++;
+        }
+      } catch (e) {
+        console.warn('Error syncing pending item:', item.date, e);
+      }
     }
 
-    return {
-      id: data.id,
-      date: data.entry_date,
-      milkTaken: Boolean(data.milk_taken),
-      quantity: Number(data.quantity) || 0,
-    } as MilkEntry;
+    return syncedCount;
   }
 );
 

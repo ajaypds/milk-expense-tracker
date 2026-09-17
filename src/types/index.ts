@@ -50,6 +50,8 @@ export interface Settings {
   vendorUpiId?: string;
   vendorPhone?: string;
   advanceBalance?: number;
+  dailyReminderEnabled?: boolean;
+  dailyReminderTime?: string;
   paymentStatus: {
     [monthPeriod: string]: 'Paid' | 'Unpaid'; // e.g., { "2025-11": "Paid" }
   };
