@@ -10,12 +10,13 @@ import SettingsPage from "./pages/SettingsPage";
 import ReportsPage from "./pages/ReportsPage";
 import LoginPage from "./pages/LoginPage";
 import PrivateRoute from "./components/PrivateRoute";
+import SetNewPasswordModal from "./components/SetNewPasswordModal";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { StatusBar, Style } from "@capacitor/status-bar";
 
 const AppContent: React.FC = () => {
   const { mode } = useAppTheme();
-  const { user } = useAuth();
+  const { user, setIsPasswordRecovery } = useAuth();
 
   useEffect(() => {
     const applyStatusBarStyle = async () => {
@@ -55,6 +56,9 @@ const AppContent: React.FC = () => {
           if (hashIdx !== -1) {
             const hash = data.url.substring(hashIdx);
             window.location.hash = hash;
+            if (hash.includes("type=recovery")) {
+              setIsPasswordRecovery(true);
+            }
           }
           navigate("/login");
         }
@@ -67,7 +71,7 @@ const AppContent: React.FC = () => {
       backButtonListener.then((listener) => listener.remove());
       appUrlOpenListener.then((listener) => listener.remove());
     };
-  }, [navigate, location]);
+  }, [navigate, location, setIsPasswordRecovery]);
 
   const theme = useMemo(
     () =>
@@ -90,6 +94,7 @@ const AppContent: React.FC = () => {
   return (
     <MuiThemeProvider theme={theme}>
       <CssBaseline />
+      <SetNewPasswordModal />
       <div className="mx-auto h-screen flex flex-col overflow-hidden">
         {user && <Navbar />}
         <main className="flex-1 overflow-y-auto">
