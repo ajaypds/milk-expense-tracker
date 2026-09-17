@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "@capacitor/android": "^7.4.4",
-    "@capacitor/cli": "^7.4.4",
     "@capacitor/app": "^7.0.0",
+    "@capacitor/cli": "^7.4.4",
     "@capacitor/core": "^7.4.4",
     "@capacitor/status-bar": "^7.0.3",
     "@emotion/react": "^11.14.0",
@@ -21,6 +21,7 @@
     "@mui/material": "^7.3.5",
     "@mui/x-date-pickers": "^8.18.0",
     "@reduxjs/toolkit": "^2.10.1",
+    "@supabase/supabase-js": "^2.116.0",
     "@tailwindcss/vite": "^4.1.17",
     "dayjs": "^1.11.19",
     "firebase": "^12.5.0",
