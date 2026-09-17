@@ -1,13 +1,8 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
-import { collection, addDoc, getDocs, query, where, doc, setDoc, orderBy, limit, startAfter as startAfterFn, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { supabase } from '../supabase/client';
 import type { MilkEntry } from '../types';
-import { getPeriodDates, getMonthPeriod } from '../utils/dateUtils';
-
-const USER_ID = 'defaultUser';
-const entriesColRef = collection(db, 'users', USER_ID, 'milkEntries');
-const periodsColRef = collection(db, 'users', USER_ID, 'billingPeriods');
+import { getMonthPeriod } from '../utils/dateUtils';
 
 interface MilkState {
   entries: MilkEntry[];
@@ -25,79 +20,33 @@ const initialState: MilkState = {
   periodsLoading: false,
 };
 
-// (local reducers are defined directly in createSlice)
-
 // Thunk to fetch entries for a given month period (e.g., "2025-11")
 export const fetchEntriesForPeriod = createAsyncThunk(
   'milk/fetchEntriesForPeriod',
   async (monthPeriod: string) => {
-    const { startDate, endDate } = getPeriodDates(monthPeriod);
-    const q = query(entriesColRef, where('date', '>=', startDate), where('date', '<=', endDate));
-    const querySnapshot = await getDocs(q);
-    // Debug: log how many docs were returned and their ids/dates (remove or silence in production)
-    console.log(
-      'fetchEntriesForPeriod',
-      monthPeriod,
-      'start',
-      startDate,
-      'end',
-      endDate,
-      'count',
-      querySnapshot.size,
-      'ids',
-      querySnapshot.docs.map((d) => d.id),
-      'dates',
-      querySnapshot.docs.map((d) => ((d.data() as Record<string, unknown>).date))
-    );
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
 
-    let entries = querySnapshot.docs.map((doc) => {
-      const d = doc.data() as Record<string, unknown>;
-      // Normalize date field to YYYY-MM-DD string where possible
-      let dateStr = '';
-      const rawDate = d.date;
-      if (typeof rawDate === 'string') dateStr = rawDate;
-      else if (typeof rawDate === 'object' && rawDate && typeof (rawDate as { toDate?: unknown }).toDate === 'function') {
-        dateStr = (rawDate as { toDate: () => Date }).toDate().toISOString().split('T')[0];
-      } else if (rawDate != null) dateStr = String(rawDate);
+    const { data, error } = await supabase
+      .from('milk_entries')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('billing_period', monthPeriod)
+      .order('entry_date', { ascending: true });
 
-      return {
-        id: doc.id,
-        date: dateStr,
-        milkTaken: Boolean(d.milkTaken),
-        quantity: typeof d.quantity === 'number' ? (d.quantity as number) : Number(d.quantity),
-      } as MilkEntry;
-    });
-
-    // Fallback: if the query returned nothing, try a client-side filter to detect mismatched date types
-    if (querySnapshot.empty) {
-      console.warn('fetchEntriesForPeriod: no results from server-side query, running fallback client-side filter');
-      const allSnapshot = await getDocs(entriesColRef);
-      const fallback = allSnapshot.docs
-        .map((d) => {
-          const dd = d.data() as Record<string, unknown>;
-          let dateStr = '';
-          const rawDate = dd.date;
-          if (typeof rawDate === 'string') dateStr = rawDate;
-          else if (typeof rawDate === 'object' && rawDate && typeof (rawDate as { toDate?: unknown }).toDate === 'function') {
-            dateStr = (rawDate as { toDate: () => Date }).toDate().toISOString().split('T')[0];
-          } else if (rawDate != null) dateStr = String(rawDate);
-
-          return {
-            id: d.id,
-            date: dateStr,
-            milkTaken: Boolean(dd.milkTaken),
-            quantity: typeof dd.quantity === 'number' ? (dd.quantity as number) : Number(dd.quantity),
-          } as MilkEntry;
-        })
-        .filter((entry) => {
-          const val = entry.date;
-          if (!val) return false;
-          return val >= startDate && val <= endDate;
-        });
-
-      console.log('fetchEntriesForPeriod fallback count', fallback.length, 'ids', fallback.map((f) => f.id));
-      if (fallback.length) entries = fallback;
+    if (error) {
+      console.error('fetchEntriesForPeriod error:', error);
+      throw error;
     }
+
+    const entries = (data || []).map((d) => ({
+      id: d.id,
+      date: d.entry_date,
+      milkTaken: Boolean(d.milk_taken),
+      quantity: Number(d.quantity) || 0,
+    })) as MilkEntry[];
 
     return entries;
   }
@@ -107,9 +56,29 @@ export const fetchEntriesForPeriod = createAsyncThunk(
 export const fetchAllEntries = createAsyncThunk(
   'milk/fetchAllEntries',
   async () => {
-    const querySnapshot = await getDocs(entriesColRef);
-    console.log('fetchAllEntries count', querySnapshot.size, 'ids', querySnapshot.docs.map(d => d.id));
-    const entries = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MilkEntry));
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase
+      .from('milk_entries')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('entry_date', { ascending: true });
+
+    if (error) {
+      console.error('fetchAllEntries error:', error);
+      throw error;
+    }
+
+    const entries = (data || []).map((d) => ({
+      id: d.id,
+      date: d.entry_date,
+      milkTaken: Boolean(d.milk_taken),
+      quantity: Number(d.quantity) || 0,
+    })) as MilkEntry[];
+
     return entries;
   }
 );
@@ -118,10 +87,27 @@ export const fetchAllEntries = createAsyncThunk(
 export const fetchDistinctPeriods = createAsyncThunk(
   'milk/fetchDistinctPeriods',
   async () => {
-    const snapshot = await getDocs(periodsColRef);
-    const periods = snapshot.docs.map((d) => (d.data() as Record<string, unknown>).period as string).filter(Boolean);
-    // sort descending
-    return periods.sort((a, b) => (a < b ? 1 : -1));
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase
+      .from('billing_periods')
+      .select('billing_period')
+      .eq('user_id', user.id)
+      .order('billing_period', { ascending: false });
+
+    if (error) {
+      console.error('fetchDistinctPeriods error:', error);
+      throw error;
+    }
+
+    const periods = (data || [])
+      .map((d) => d.billing_period as string)
+      .filter(Boolean);
+
+    return periods;
   }
 );
 
@@ -129,34 +115,52 @@ export const fetchDistinctPeriods = createAsyncThunk(
 export const upsertMilkEntry = createAsyncThunk(
   'milk/upsertMilkEntry',
   async (entry: Omit<MilkEntry, 'id'>) => {
-    // Check if an entry for the given date already exists
-    // Compute billing period (YYYY-MM) from the entry date
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
     const bp = getMonthPeriod(new Date(entry.date));
+    const stored = {
+      user_id: user.id,
+      entry_date: entry.date,
+      milk_taken: Boolean(entry.milkTaken),
+      quantity: entry.milkTaken ? Number(entry.quantity) || 0 : 0,
+      billing_period: bp,
+      updated_at: new Date().toISOString(),
+    };
 
-    // Build stored object with billingPeriod
-    const stored = { ...entry, billingPeriod: bp };
+    const { data, error } = await supabase
+      .from('milk_entries')
+      .upsert(stored, { onConflict: 'user_id,entry_date' })
+      .select()
+      .single();
 
-    const q = query(entriesColRef, where('date', '==', entry.date));
-    const querySnapshot = await getDocs(q);
-
-    let docId: string;
-    if (querySnapshot.empty) {
-      const docRef = await addDoc(entriesColRef, stored);
-      docId = docRef.id;
-    } else {
-      const existingDocId = querySnapshot.docs[0].id;
-      await setDoc(doc(db, 'users', USER_ID, 'milkEntries', existingDocId), stored);
-      docId = existingDocId;
+    if (error) {
+      console.error('upsertMilkEntry error:', error);
+      throw error;
     }
 
-    // Ensure billingPeriods metadata exists for this period
+    // Ensure billing_periods entry exists for this period
     try {
-      await setDoc(doc(periodsColRef, bp), { period: bp, updatedAt: serverTimestamp() }, { merge: true });
+      await supabase.from('billing_periods').upsert(
+        {
+          user_id: user.id,
+          billing_period: bp,
+          payment_status: 'Unpaid',
+        },
+        { onConflict: 'user_id,billing_period', ignoreDuplicates: true }
+      );
     } catch (err) {
-      console.warn('Failed to write billingPeriods metadata', err);
+      console.warn('Failed to ensure billing_periods row', err);
     }
 
-    return { id: docId, ...stored } as MilkEntry;
+    return {
+      id: data.id,
+      date: data.entry_date,
+      milkTaken: Boolean(data.milk_taken),
+      quantity: Number(data.quantity) || 0,
+    } as MilkEntry;
   }
 );
 
@@ -164,17 +168,33 @@ export const upsertMilkEntry = createAsyncThunk(
 export const fetchEntriesPage = createAsyncThunk(
   'milk/fetchEntriesPage',
   async (params: { pageSize?: number; startAfter?: string } = {}) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
     const pageSize = params.pageSize ?? 20;
-    const start = params.startAfter;
-    let q;
-    if (start) {
-      q = query(entriesColRef, orderBy('date'), startAfterFn(start), limit(pageSize));
-    } else {
-      q = query(entriesColRef, orderBy('date'), limit(pageSize));
+    let query = supabase
+      .from('milk_entries')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('entry_date', { ascending: true })
+      .limit(pageSize);
+
+    if (params.startAfter) {
+      query = query.gt('entry_date', params.startAfter);
     }
-    const querySnapshot = await getDocs(q);
-    console.log('fetchEntriesPage count', querySnapshot.size, 'startAfter', start);
-    const entries = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MilkEntry));
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const entries = (data || []).map((d) => ({
+      id: d.id,
+      date: d.entry_date,
+      milkTaken: Boolean(d.milk_taken),
+      quantity: Number(d.quantity) || 0,
+    })) as MilkEntry[];
+
     const last = entries.length ? entries[entries.length - 1].date : null;
     return { entries, last } as { entries: MilkEntry[]; last: string | null };
   }
@@ -208,7 +228,6 @@ const milkSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchEntriesPage.fulfilled, (state, action: PayloadAction<{ entries: MilkEntry[]; last: string | null }>) => {
-        // Append page results
         state.entries = [...state.entries, ...action.payload.entries];
         state.loading = false;
       })
@@ -242,12 +261,10 @@ const milkSlice = createSlice({
       })
       .addCase(upsertMilkEntry.fulfilled, (state, action: PayloadAction<MilkEntry>) => {
         const newEntry = action.payload;
-        const existingIndex = state.entries.findIndex(e => e.date === newEntry.date);
+        const existingIndex = state.entries.findIndex((e) => e.date === newEntry.date);
         if (existingIndex !== -1) {
           state.entries[existingIndex] = newEntry;
         } else {
-          // This logic might need to be smarter depending on what period is currently loaded
-          // For now, we'll just add it if it's not a duplicate date.
           state.entries.push(newEntry);
         }
       });
@@ -255,5 +272,4 @@ const milkSlice = createSlice({
 });
 
 export const { clearEntries } = milkSlice.actions;
-
 export default milkSlice.reducer;

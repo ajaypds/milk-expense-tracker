@@ -9,13 +9,12 @@ import DashboardPage from "./pages/DashboardPage";
 import SettingsPage from "./pages/SettingsPage";
 import LoginPage from "./pages/LoginPage";
 import PrivateRoute from "./components/PrivateRoute";
-import { useAuthState } from "react-firebase-hooks/auth";
-import { auth } from "./firebase/config";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import { StatusBar, Style } from "@capacitor/status-bar";
 
 const AppContent: React.FC = () => {
   const { mode } = useAppTheme();
-  const [user] = useAuthState(auth);
+  const { user } = useAuth();
 
   useEffect(() => {
     const applyStatusBarStyle = async () => {
@@ -111,9 +110,11 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <ThemeProvider>
-      <AppContent />
-    </ThemeProvider>
+    <AuthProvider>
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
+    </AuthProvider>
   );
 };
 

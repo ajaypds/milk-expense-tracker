@@ -24,11 +24,9 @@
     "@supabase/supabase-js": "^2.116.0",
     "@tailwindcss/vite": "^4.1.17",
     "dayjs": "^1.11.19",
-    "firebase": "^12.5.0",
     "firebase-admin": "^13.6.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-firebase-hooks": "^5.1.1",
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.9.5",
     "tailwindcss": "^4.1.17"

@@ -1,12 +1,6 @@
 import React, { useState } from "react";
-import {
-  signInWithPopup,
-  GoogleAuthProvider,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-} from "firebase/auth";
-import { auth } from "../firebase/config";
-import { useAuthState } from "react-firebase-hooks/auth";
+import { useAuth } from "../context/AuthContext";
+import { supabase } from "../supabase/client";
 import { Navigate } from "react-router-dom";
 import {
   Container,
@@ -22,10 +16,8 @@ import {
 } from "@mui/material";
 import GoogleIcon from "@mui/icons-material/Google";
 
-const googleProvider = new GoogleAuthProvider();
-
 const LoginPage: React.FC = () => {
-  const [user, loading] = useAuthState(auth);
+  const { user, loading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -34,7 +26,15 @@ const LoginPage: React.FC = () => {
   const handleGoogleLogin = async () => {
     setError("");
     try {
-      await signInWithPopup(auth, googleProvider);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+      if (error) {
+        setError(error.message);
+      }
     } catch (error: unknown) {
       if (error instanceof Error) {
         setError(error.message);
@@ -50,9 +50,17 @@ const LoginPage: React.FC = () => {
     setError("");
     try {
       if (isRegistering) {
-        await createUserWithEmailAndPassword(auth, email, password);
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        if (error) setError(error.message);
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) setError(error.message);
       }
     } catch (error: unknown) {
       if (error instanceof Error) {

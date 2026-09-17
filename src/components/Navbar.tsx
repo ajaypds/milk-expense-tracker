@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { NavLink } from "react-router-dom";
-import { auth } from "../firebase/config";
-import { useAuthState } from "react-firebase-hooks/auth";
+import { useAuth } from "../context/AuthContext";
 import {
   AppBar,
   Toolbar,
@@ -16,11 +15,10 @@ import {
 import MenuIcon from "@mui/icons-material/Menu";
 import Brightness4Icon from "@mui/icons-material/Brightness4";
 import Brightness7Icon from "@mui/icons-material/Brightness7";
-import { signOut } from "firebase/auth";
 import { useAppTheme } from "../context/ThemeContext";
 
 const Navbar: React.FC = () => {
-  const [user] = useAuthState(auth);
+  const { user, signOut } = useAuth();
   const [userMenuAnchorEl, setUserMenuAnchorEl] = useState<null | HTMLElement>(
     null
   );
@@ -49,7 +47,7 @@ const Navbar: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await signOut();
     } catch (error) {
       console.error("Error signing out:", error);
     }
@@ -114,8 +112,8 @@ const Navbar: React.FC = () => {
                 sx={{ ml: 2 }}
               >
                 <Avatar
-                  alt={user.displayName || "User"}
-                  src={user.photoURL || undefined}
+                  alt={user.user_metadata?.displayName || user.user_metadata?.full_name || user.email || "User"}
+                  src={user.user_metadata?.avatar_url || user.user_metadata?.picture || undefined}
                   sx={{ width: 32, height: 32 }}
                 />
               </IconButton>
