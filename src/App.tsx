@@ -13,6 +13,7 @@ import PrivateRoute from "./components/PrivateRoute";
 import SetNewPasswordModal from "./components/SetNewPasswordModal";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { StatusBar, Style } from "@capacitor/status-bar";
+import { supabase } from "./supabase/client";
 
 const AppContent: React.FC = () => {
   const { mode } = useAppTheme();
@@ -48,23 +49,84 @@ const AppContent: React.FC = () => {
       }
     });
 
-    const appUrlOpenListener = CapacitorApp.addListener("appUrlOpen", (data) => {
-      console.log("Deep link opened:", data.url);
+    const handleDeepLinkUrl = async (urlStr: string) => {
+      console.log("Deep link opened:", urlStr);
       try {
-        if (data.url.includes("milkexpense://")) {
-          const hashIdx = data.url.indexOf("#");
+        if (
+          urlStr.includes("milkexpense://") ||
+          urlStr.includes("milkmanager-c700b.web.app") ||
+          urlStr.includes("milkmanager-c700b.firebaseapp.com")
+        ) {
+          const hashIdx = urlStr.indexOf("#");
+          const searchIdx = urlStr.indexOf("?");
+
+          // 1. Mark recovery state if recovery flow is present
+          if (urlStr.includes("type=recovery")) {
+            setIsPasswordRecovery(true);
+          }
+
+          // 2. Process hash fragments (#access_token=...&refresh_token=...)
           if (hashIdx !== -1) {
-            const hash = data.url.substring(hashIdx);
+            const hash = urlStr.substring(hashIdx);
             window.location.hash = hash;
-            if (hash.includes("type=recovery")) {
-              setIsPasswordRecovery(true);
+            const hashParams = new URLSearchParams(hash.replace(/^#/, ""));
+            const accessToken = hashParams.get("access_token");
+            const refreshToken = hashParams.get("refresh_token");
+
+            if (accessToken && refreshToken) {
+              const { data: sessionData, error: sessionErr } =
+                await supabase.auth.setSession({
+                  access_token: accessToken,
+                  refresh_token: refreshToken,
+                });
+
+              if (!sessionErr && sessionData?.session) {
+                if (urlStr.includes("type=recovery")) {
+                  navigate("/login");
+                } else {
+                  navigate("/");
+                }
+                return;
+              }
             }
           }
+
+          // 3. Process PKCE query parameters (?code=...)
+          if (searchIdx !== -1) {
+            const search = urlStr.substring(searchIdx).split("#")[0];
+            const searchParams = new URLSearchParams(search);
+            const code = searchParams.get("code");
+            if (code) {
+              const { data: sessionData, error: codeErr } =
+                await supabase.auth.exchangeCodeForSession(code);
+              if (!codeErr && sessionData?.session) {
+                if (urlStr.includes("type=recovery")) {
+                  navigate("/login");
+                } else {
+                  navigate("/");
+                }
+                return;
+              }
+            }
+          }
+
           navigate("/login");
         }
       } catch (err) {
         console.warn("Error processing deep link URL:", err);
       }
+    };
+
+    // Cold launch deep link check
+    CapacitorApp.getLaunchUrl().then((launchUrl) => {
+      if (launchUrl?.url) {
+        handleDeepLinkUrl(launchUrl.url);
+      }
+    });
+
+    // Warm launch deep link listener
+    const appUrlOpenListener = CapacitorApp.addListener("appUrlOpen", (data) => {
+      handleDeepLinkUrl(data.url);
     });
 
     return () => {

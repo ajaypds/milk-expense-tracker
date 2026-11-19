@@ -72,6 +72,23 @@ const LoginPage: React.FC = () => {
       setError(
         "The email link has expired or was already used. Use the 'Forgot Password?' button below to request a fresh link."
       );
+    } else if (
+      window.location.hash.includes("type=signup") ||
+      window.location.search.includes("type=signup")
+    ) {
+      setInfoMessage("Email confirmed successfully! You can now sign in.");
+    }
+
+    // If opened in mobile browser on Android, attempt to open the native app with the deep link
+    if (
+      !Capacitor.isNativePlatform() &&
+      /android/i.test(navigator.userAgent) &&
+      (window.location.hash.includes("access_token") ||
+        window.location.hash.includes("type=signup") ||
+        window.location.search.includes("type=signup"))
+    ) {
+      const targetDeepLink = `milkexpense://login${window.location.search}${window.location.hash}`;
+      window.location.href = targetDeepLink;
     }
 
     return () => {
@@ -99,9 +116,18 @@ const LoginPage: React.FC = () => {
           return;
         }
 
+        const redirectUrl = Capacitor.isNativePlatform()
+          ? "milkexpense://login"
+          : window.location.origin.includes("localhost")
+          ? window.location.origin
+          : "https://milkmanager-c700b.web.app";
+
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: email.trim(),
           password,
+          options: {
+            emailRedirectTo: redirectUrl,
+          },
         });
 
         if (signUpError) throw signUpError;
@@ -147,7 +173,7 @@ const LoginPage: React.FC = () => {
         ? "milkexpense://login"
         : window.location.origin.includes("localhost")
         ? window.location.origin
-        : "https://milkmanager-c700b.firebaseapp.com";
+        : "https://milkmanager-c700b.web.app";
 
       const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
         redirectTo: redirectUrl,
@@ -299,6 +325,53 @@ const LoginPage: React.FC = () => {
             <Tab label="Create Account" />
           </Tabs>
         </Box>
+
+        {!Capacitor.isNativePlatform() && /android/i.test(navigator.userAgent) && (
+          <Box
+            sx={{
+              width: "100%",
+              mb: 3,
+              p: 2,
+              borderRadius: 3,
+              bgcolor: (theme) =>
+                theme.palette.mode === "dark" ? "rgba(59, 130, 246, 0.12)" : "#eff6ff",
+              border: "1px solid",
+              borderColor: (theme) =>
+                theme.palette.mode === "dark" ? "rgba(59, 130, 246, 0.3)" : "#bfdbfe",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              textAlign: "center",
+              gap: 1,
+            }}
+          >
+            <Typography
+              variant="body2"
+              sx={{
+                fontWeight: 600,
+                color: (theme) =>
+                  theme.palette.mode === "dark" ? "#93c5fd" : "#1e40af",
+              }}
+            >
+              Have the Milk Expense app installed?
+            </Typography>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<CheckCircleOutlineIcon />}
+              href={`milkexpense://login${window.location.search}${window.location.hash}`}
+              sx={{
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: 2,
+                backgroundColor: "#2563eb",
+                "&:hover": { backgroundColor: "#1d4ed8" },
+              }}
+            >
+              Open in Mobile App
+            </Button>
+          </Box>
+        )}
 
         {error && (
           <Alert severity="error" className="w-full mb-4 rounded-xl" onClose={() => setError("")}>
