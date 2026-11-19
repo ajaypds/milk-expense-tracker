@@ -22,6 +22,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Deep Link Scheme for Milk Expense Auth & Password Recovery -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="milkexpense" />
+            </intent-filter>
+
+            <!-- Web App Links for Firebase Hosting domain -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="milkmanager-c700b.web.app" />
+                <data android:scheme="https" android:host="milkmanager-c700b.firebaseapp.com" />
+            </intent-filter>
+
         </activity>
 
         <provider

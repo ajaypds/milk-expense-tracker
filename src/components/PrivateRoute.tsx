@@ -1,13 +1,12 @@
 import React from "react";
 import { Navigate } from "react-router-dom";
-import { useAuthState } from "react-firebase-hooks/auth";
-import { auth } from "../firebase/config";
+import { useAuth } from "../context/AuthContext";
 import { Box, CircularProgress } from "@mui/material";
 
 const PrivateRoute: React.FC<{ children: React.ReactElement }> = ({
   children,
 }) => {
-  const [user, loading] = useAuthState(auth);
+  const { user, loading } = useAuth();
 
   if (loading) {
     return (

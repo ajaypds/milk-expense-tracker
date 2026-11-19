@@ -2,9 +2,9 @@ import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import type { AppDispatch, RootState } from "../store/store";
 import { upsertMilkEntry } from "../store/milkSlice";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "../firebase/config";
+import { supabase } from "../supabase/client";
 import type { MilkEntry } from "../types";
+import { offlineSyncService } from "../services/offlineSyncService";
 import {
   FormControlLabel,
   Checkbox,
@@ -23,12 +23,9 @@ import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import dayjs, { Dayjs } from "dayjs";
-// ensure dayjs uses en-gb locale so DatePicker shows day-first format (DD/MM/YYYY)
 import "dayjs/locale/en-gb";
 import { getMonthPeriod } from "../utils/dateUtils";
 dayjs.locale("en-gb");
-
-const USER_ID = "defaultUser";
 
 interface Props {
   initialEntry?: MilkEntry | null;
@@ -40,9 +37,6 @@ const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
   const paymentStatus = useSelector(
     (state: RootState) => state.settings.settings.paymentStatus
   );
-  // We intentionally do not use the global `loading` flag to render the Save button
-  // to avoid the visual flash when other parts of the page fetch data.
-  // Keep selecting the state in case future logic needs it.
   useSelector((state: RootState) => state.milk);
   const [saving, setSaving] = useState(false);
   const [disabled, setDisabled] = useState(false);
@@ -53,31 +47,56 @@ const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
   // If parent provides an initialEntry (from edit), pre-fill the form
   useEffect(() => {
     if (initialEntry) {
-      // Only update local state when the incoming initialEntry differs from current state
       if (initialEntry.date !== date) setDate(initialEntry.date);
       if (initialEntry.milkTaken !== milkTaken)
         setMilkTaken(initialEntry.milkTaken);
       if (initialEntry.quantity !== quantity)
         setQuantity(initialEntry.quantity);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialEntry]);
 
   // When the date changes, check for an existing entry and pre-fill the form
   useEffect(() => {
     const fetchEntryForDate = async () => {
-      const entriesColRef = collection(db, "users", USER_ID, "milkEntries");
-      const q = query(entriesColRef, where("date", "==", date));
-      const querySnapshot = await getDocs(q);
+      // Check offline cache first if offline
+      if (!offlineSyncService.isOnline()) {
+        const cached = offlineSyncService.getCachedEntries();
+        const match = cached.find((e) => e.date === date);
+        if (match) {
+          setMilkTaken(match.milkTaken);
+          setQuantity(match.quantity);
+        }
+        return;
+      }
 
-      if (!querySnapshot.empty) {
-        const entry = querySnapshot.docs[0].data();
-        setMilkTaken(entry.milkTaken);
-        setQuantity(entry.quantity);
-      } else {
-        // Reset to default if no entry exists for the selected date
-        setMilkTaken(true);
-        setQuantity(1);
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data } = await supabase
+          .from("milk_entries")
+          .select("*")
+          .eq("user_id", user.id)
+          .eq("entry_date", date)
+          .maybeSingle();
+
+        if (data) {
+          setMilkTaken(Boolean(data.milk_taken));
+          setQuantity(Number(data.quantity) || 1);
+        } else {
+          setMilkTaken(true);
+          setQuantity(1);
+        }
+      } catch (err) {
+        console.warn("Could not fetch entry for date, checking cache:", err);
+        const cached = offlineSyncService.getCachedEntries();
+        const match = cached.find((e) => e.date === date);
+        if (match) {
+          setMilkTaken(match.milkTaken);
+          setQuantity(match.quantity);
+        }
       }
     };
 
@@ -90,7 +109,7 @@ const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
 
     // Only auto-fetch when there's no explicit initialEntry controlling the form
     if (!initialEntry) fetchEntryForDate();
-  }, [date, initialEntry]);
+  }, [date, initialEntry, paymentStatus]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,7 +134,14 @@ const DailyEntryForm: React.FC<Props> = ({ initialEntry = null, onSave }) => {
       if (onSave) {
         onSave(savedEntry || { date, milkTaken, quantity: finalQuantity });
       }
-      setSnackbar({ open: true, message: "Entry saved", severity: "success" });
+      const isOffline = !offlineSyncService.isOnline();
+      setSnackbar({
+        open: true,
+        message: isOffline
+          ? "Saved offline. Will sync when connected to internet."
+          : "Entry saved successfully",
+        severity: isOffline ? "info" : "success",
+      });
     } else {
       // Show error toast
       const errMessage = res.error?.message || "Failed to save entry";

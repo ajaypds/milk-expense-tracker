@@ -36,9 +36,15 @@ import { fetchSettings } from "../store/settingsSlice";
 
 interface Props {
   onEdit?: (entry: MilkEntry) => void;
+  selectedPeriod?: string;
+  onPeriodChange?: (period: string) => void;
 }
 
-const DailyEntriesTable: React.FC<Props> = ({ onEdit }) => {
+const DailyEntriesTable: React.FC<Props> = ({
+  onEdit,
+  selectedPeriod: propPeriod,
+  onPeriodChange,
+}) => {
   const { entries, loading, distinctPeriods } = useSelector(
     (state: RootState) => state.milk
   );
@@ -51,7 +57,12 @@ const DailyEntriesTable: React.FC<Props> = ({ onEdit }) => {
   const [showRaw, setShowRaw] = useState(false);
   // default to current billing period so the page initially shows the current cycle
   const initialPeriod = getMonthPeriod(new Date());
-  const [periodFilter, setPeriodFilter] = useState<string>(initialPeriod);
+  const [internalPeriod, setInternalPeriod] = useState<string>(initialPeriod);
+  const periodFilter = propPeriod !== undefined ? propPeriod : internalPeriod;
+  const setPeriodFilter = (p: string) => {
+    if (onPeriodChange) onPeriodChange(p);
+    else setInternalPeriod(p);
+  };
   const [lastDate, setLastDate] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   type FetchPagePayload = { entries: MilkEntry[]; last: string | null };
